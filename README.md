@@ -2,6 +2,8 @@
 
 PeaceDash — это альтернативное приложение для управления, мониторинга и записи треков поездок для электросамокатов.
 
+<img src="https://github.com/user-attachments/assets/61ff92b8-c0fc-4e68-93b3-b7c85337622d" width="250"><img src="https://github.com/user-attachments/assets/eaf99222-08f0-415d-bbc3-79a5cfa0ca92" width="250"><img src="https://github.com/user-attachments/assets/6392deb9-fe37-43c9-900c-5e7c14c87cab" width="250"><img src="https://github.com/user-attachments/assets/afdf437a-8644-4936-bad3-c82d6f910ff5" width="250"><img src="https://github.com/user-attachments/assets/b03e126b-0622-4915-8b98-b8e775107de0" width="250"><img src="https://github.com/user-attachments/assets/87065e8e-5d37-4765-9bc1-4adcfaf9cf70" width="250"><img src="https://github.com/user-attachments/assets/99e044d1-05b0-42dc-a1a7-e3660a96e5d3" width="250">
+
 ## 📥 Скачать приложение
 **[Скачать последнюю версию PeaceDash.apk](https://github.com/FedulRasta/PeaceDash/releases/latest)**
 
