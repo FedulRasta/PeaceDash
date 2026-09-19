@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PeaceDash Web</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#0B0E14;color:#fff;max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:22px}
+button{background:#4CAF50;color:#fff;border:0;border-radius:10px;padding:12px 18px;font-size:16px;cursor:pointer}
+button:disabled{background:#455A64}
+.card{background:#151922;border-radius:12px;padding:14px;margin:12px 0}
+.row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #223344}
+.row span:first-child{color:#8899AA}
+#status{color:#FF9800;margin:8px 0}
+#log{background:#000;color:#0f0;font:12px monospace;height:220px;overflow:auto;white-space:pre-wrap;padding:8px;border-radius:8px}
+label{color:#8899AA;font-size:14px}
+</style>
+</head>
+<body>
+<h1>PeaceDash Web</h1>
+<div id="warn" class="card" style="display:none;color:#F44336"></div>
+<div class="card">
+  <button id="btn">Подключиться к самокату</button>
+  <label><input type="checkbox" id="all"> показать все Bluetooth-устройства</label>
+  <div id="status">Не подключено</div>
+</div>
+<div class="card">
+  <div class="row"><span>Серийный номер</span><span id="sn">—</span></div>
+  <div class="row"><span>Модель</span><span id="model">—</span></div>
+  <div class="row"><span>Регион</span><span id="region">—</span></div>
+  <div class="row"><span>VCU</span><span id="vcu">—</span></div>
+  <div class="row"><span>MCU</span><span id="mcu">—</span></div>
+  <div class="row"><span>BMS</span><span id="bms">—</span></div>
+  <div class="row"><span>BLE</span><span id="ble">—</span></div>
+</div>
+<div id="log"></div>
+
+<script>
+const SRV='6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const CHW='6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const CHN='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const BASIC=[0x97,0xCF,0xB8,0x02,0x84,0x41,0x43,0xDE,0x56,0x00,0x2B,0x3B,0x34,0x78,0x0A,0x5D];
+
+const $=id=>document.getElementById(id);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function log(m){const l=$('log');l.textContent+=new Date().toLocaleTimeString()+' '+m+'\n';l.scrollTop=l.scrollHeight;}
+function status(m){$('status').textContent=m;}
+const hex=b=>[...b].map(x=>x.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+function fromHex(s){s=s.replace(/\s+/g,'');const o=new Uint8Array(s.length/2);for(let i=0;i<o.length;i++)o[i]=parseInt(s.substr(i*2,2),16);return o;}
+function xor(a,b){const r=new Uint8Array(a.length);for(let i=0;i<a.length;i++)r[i]=a[i]^b[i];return r;}
+function setBE(b,v){b[1]=(v>>>24)&255;b[2]=(v>>>16)&255;b[3]=(v>>>8)&255;b[4]=v&255;}
+
+/* ===== Протокол Ninebot (порт ProtocolNinebot.kt) ===== */
+class Proto{
+  constructor(name,gen3){
+    this.name=new TextEncoder().encode(name);
+    this.basic=gen3?new Uint8Array(16):Uint8Array.from(BASIC);
+    this.ble=new Uint8Array(16);
+    this.app=new Uint8Array(16);
+    this.key=new Uint8Array(16);
+    this.it=0;
+    this.cache={};
+  }
+  async init(){await this.calcKey(this.name,this.basic);}
+  async calcKey(a,b){
+    const d=new Uint8Array(32);
+    d.set(a.slice(0,16),0);d.set(b.slice(0,16),16);
+    const h=new Uint8Array(await crypto.subtle.digest('SHA-1',d));
+    this.key=h.slice(0,16);
+  }
+  async aes(block){
+    const id=this.key.join(',');
+    let k=this.cache[id];
+    if(!k){k=await crypto.subtle.importKey('raw',this.key,'AES-CBC',false,['encrypt']);this.cache[id]=k;}
+    const r=await crypto.subtle.encrypt({name:'AES-CBC',iv:new Uint8Array(16)},k,block);
+    return new Uint8Array(r).slice(0,16); // CBC с нулевым IV на один блок = ECB
+  }
+  setSaved(k){this.app.set(k.slice(0,16));}
+  async reconnectWithSavedKey(){
+    await this.calcKey(this.app,this.ble);
+    if(this.it===0)this.it=1;
+  }
+  async cryptoFirst(data){
+    const ks=await this.aes(this.basic);
+    const r=new Uint8Array(data.length);
+    for(let i=0;i<data.length;i++)r[i]=data[i]^ks[i%16];
+    return r;
+  }
+  async cryptoNext(data,it){
+    const r=new Uint8Array(data.length);
+    const b=new Uint8Array(16);
+    b[0]=1;setBE(b,it);b.set(this.ble.slice(0,8),5);b[15]=0;
+    for(let i=0;i<data.length;i+=16){
+      b[15]++;
+      const ks=await this.aes(b);
+      for(let j=0;j<16&&i+j<data.length;j++)r[i+j]=data[i+j]^ks[j];
+    }
+    return r;
+  }
+  crcFirst(payload){
+    let s=0;for(const x of payload)s+=(x<<24>>24);
+    const c=~s;
+    return [c&255,(c>>8)&255];
+  }
+  async crcNext(data,it){
+    const len=data.length-3;
+    const b=new Uint8Array(16);
+    b[0]=89;setBE(b,it);b.set(this.ble.slice(0,8),5);b[15]=len;
+    let x2=await this.aes(b);
+    const h=new Uint8Array(16);h.set(data.slice(0,3));
+    x2=await this.aes(xor(h,x2));
+    for(let i=3;i<data.length;i+=16){
+      const c=new Uint8Array(16);c.set(data.slice(i,i+16));
+      x2=await this.aes(xor(c,x2));
+    }
+    b[0]=1;b[15]=0;
+    const a=await this.aes(b);
+    return [0,1,2,3].map(i=>a[i]^x2[i]);
+  }
+  async encrypt(data){
+    const payloadLen=data.length-3;
+    let payload=data.slice(3);
+    const out=new Uint8Array(payloadLen+9);
+    out.set(data.slice(0,3),0);
+    if(this.it===0){
+      const crc=this.crcFirst(payload);
+      payload=await this.cryptoFirst(payload);
+      out.set(payload,3);
+      out[payloadLen+3]=0;out[payloadLen+4]=0;out[payloadLen+5]=crc[0];out[payloadLen+6]=crc[1];out[payloadLen+7]=0;out[payloadLen+8]=0;
+      this.it++;
+    }else{
+      this.it++;
+      const crc=await this.crcNext(data,this.it);
+      payload=await this.cryptoNext(payload,this.it);
+      out.set(payload,3);
+      out[payloadLen+3]=crc[0];out[payloadLen+4]=crc[1];out[payloadLen+5]=crc[2];out[payloadLen+6]=crc[3];
+      out[payloadLen+7]=(this.it>>8)&255;out[payloadLen+8]=this.it&255;
+      if(data[0]===0x5A&&data[1]===0xA5&&data[2]===0x10&&data[5]===0x5C&&data[6]===0x00){
+        this.app.set(data.slice(7,23));
+      }
+    }
+    return out;
+  }
+  async decrypt(data){
+    const n=data.length;
+    const dec=new Uint8Array(n-6);
+    dec.set(data.slice(0,3),0);
+    const newIt=((((this.it&0xFFFF0000)>>>0)+((data[n-2]<<8)|data[n-1]))>>>0);
+    let payload=data.slice(3,3+(n-9));
+    if(newIt===0){
+      payload=await this.cryptoFirst(payload);
+      dec.set(payload,3);
+      if(dec[0]===0x5A&&dec[1]===0xA5&&dec[2]===0x1E&&dec[5]===0x5B){
+        this.ble=dec.slice(7,23);
+        await this.calcKey(this.name,this.ble);
+      }
+    }else{
+      payload=await this.cryptoNext(payload,newIt);
+      dec.set(payload,3);
+      if(dec[0]===0x5A&&dec[1]===0xA5&&dec[2]===0x00&&dec[5]===0x5C&&dec[6]===0x01){
+        await this.calcKey(this.app,this.ble);
+      }
+      if(this.it>newIt)this.it=newIt;else this.it++;
+    }
+    return dec;
+  }
+}
+
+/* ===== Bluetooth ===== */
+let device=null,chW=null,chN=null,proto=null,gen3=false;
+let rx=[],chain=Promise.resolve(),sessionId=0;
+let handshakeDone=false,handshakeTimer=null,gen3Timer=null,pending=null,appKey=null,fastMode=false;
+
+async function writeRaw(bytes){
+  for(let i=0;i<bytes.length;i+=20){
+    await chW.writeValueWithoutResponse(bytes.slice(i,i+20));
+    await sleep(15);
+  }
+}
+async function sendCmd(hexStr){
+  const raw=await proto.encrypt(fromHex(hexStr));
+  log('TX '+hex(raw));
+  await writeRaw(raw);
+}
+function sendAndWait(hexStr){
+  return new Promise(async res=>{
+    const t=setTimeout(()=>{pending=null;res(null);},1500);
+    pending=()=>{clearTimeout(t);pending=null;res(true);};
+    try{await sendCmd(hexStr);}catch(e){log('Ошибка отправки: '+e.message);}
+  });
+}
+
+function onNotify(ev){
+  const v=new Uint8Array(ev.target.value.buffer.slice(ev.target.value.byteOffset,ev.target.value.byteOffset+ev.target.value.byteLength));
+  rx.push(...v);
+  while(rx.length>=3){
+    if(rx[0]!==0x5A||rx[1]!==0xA5){rx=[];return;}
+    const total=rx[2]+13;
+    if(rx.length<total)return;
+    const pkt=Uint8Array.from(rx.slice(0,total));
+    rx=rx.slice(total);
+    const sid=sessionId;
+    chain=chain.then(()=>handlePacket(pkt,sid)).catch(e=>log('Ошибка: '+e.message));
+  }
+}
+
+async function handlePacket(pkt,sid){
+  if(sid!==sessionId)return;
+  clearTimeout(gen3Timer);
+  const dec=await proto.decrypt(pkt);
+  if(dec.length<7)return;
+  const cmd=dec[5];
+  if(cmd!==0x04)log('RX '+hex(dec));
+  if(cmd===0x5B){
+    if(handshakeDone||handshakeTimer||fastMode)return;
+    if(appKey){
+      log('Быстрый вход с сохранённым ключом');
+      proto.setSaved(appKey);
+      await proto.reconnectWithSavedKey();
+      fastMode=true;
+      startInfo(sid);
+      return;
+    }
+    appKey=crypto.getRandomValues(new Uint8Array(16));
+    const p=new Uint8Array(23);
+    p.set([0x5A,0xA5,0x10,0x3E,0x04,0x5C,0x00],0);p.set(appKey,7);
+    status('Нажмите кнопку питания на самокате!');
+    let tries=0;
+    const send=async()=>{
+      if(handshakeDone||sid!==sessionId)return;
+      if(++tries>40){status('Не удалось привязаться');return;}
+      try{
+        const raw=await proto.encrypt(p);
+        log('TX '+hex(raw));await writeRaw(raw);
+      }catch(e){}
+      handshakeTimer=setTimeout(send,1000);
+    };
+    send();
+  }else if(cmd===0x5C){
+    const code=dec[6];
+    log('Ответ авторизации: '+code);
+    if(code===1){
+      clearTimeout(handshakeTimer);handshakeDone=true;
+      localStorage.setItem('appkey_'+device.name,btoa(String.fromCharCode(...appKey)));
+      log('Авторизация пройдена, ключ сохранён');
+      startInfo(sid);
+    }
+  }else{
+    if(fastMode&&!handshakeDone){handshakeDone=true;log('Быстрый вход подтверждён');}
+    if(cmd===0x04)parseInfo(dec);
+    if(pending)pending();
+  }
+}
+
+/* ===== Данные ===== */
+const ver3=p=>'v'+(p[1])+'.'+(p[0]>>4)+'.'+(p[0]&15);
+function parseInfo(dec){
+  const sender=dec[3],off=dec[6],p=dec.slice(7);
+  if(sender===0x16&&off===0x10&&p.length>=14){
+    const sn=new TextDecoder().decode(p.slice(0,14));
+    $('sn').textContent=sn;showModel(sn);
+  }else if(sender===0x16&&off===0x17&&p.length>=2){$('vcu').textContent=ver3(p);}
+  else if(sender===0x16&&off===0x18&&p.length>=2){$('mcu').textContent=ver3(p);}
+  else if(sender===0x16&&off===0x19&&p.length>=2){
+    $('bms').textContent='v'+(p[1]>>4)+'.'+(p[1]&15)+'.'+(p[0]>>4)+'.'+(p[0]&15);
+  }else if(sender===0x04&&off===0x01&&p.length>=2){$('ble').textContent=ver3(p);}
+}
+function showModel(sn){
+  const p3=sn.substr(0,3),c=sn[3];
+  let model='Неизвестный самокат',region='—';
+  if(p3==='1EF'){
+    if(c>='A'&&c<='E'){model='Ninebot F3';region={A:'CN (E-15, D-25, S-32 км/ч)',B:'US (E-15, D-25, S-32 км/ч)',C:'US-Standard (E-12, D-20, S-35 км/ч)',D:'DE (E-15, D-20, S-22 км/ч)',E:'EU (E-15, D-20, S-25 км/ч)'}[c];}
+    else if(c>='F'&&c<='K'&&c!=='I'){model='Ninebot F3 PRO';region={F:'CN (E-15, D-25, S-32 км/ч)',G:'US (E-15, D-25, S-32 км/ч)',H:'US-Standard (E-12, D-20, S-35 км/ч)',J:'DE (E-15, D-20, S-22 км/ч)',K:'EU (E-15, D-20, S-25 км/ч)'}[c];}
+    else model='Ninebot серия F3 (или неизвестный)';
+  }else if(p3==='1CG'){
+    model='Ninebot G3';
+    region={A:'EU (S-25 км/ч)',B:'DE (S-20 км/ч)',C:'US (S-Standard 45 км/ч)',D:'AUS (S-25 км/ч)',E:'US (S-45 км/ч)',I:'EU? (S-25 км/ч)'}[c]||'Неизвестный регион';
+  }
+  $('model').textContent=model;$('region').textContent=region||'Неизвестный регион';
+}
+async function startInfo(sid){
+  status('Подключено, читаю данные...');
+  const cmds=['5AA5003E045D00','5AA5013E1601100E','5AA5013E16011702','5AA5013E16011802','5AA5013E16011902','5AA5013E04010102'];
+  for(const c of cmds){
+    if(sid!==sessionId)return;
+    const ok=await sendAndWait(c);
+    if(!ok&&fastMode&&!handshakeDone){
+      log('Нет ответа — сохранённый ключ не подошёл, сбрасываю');
+      localStorage.removeItem('appkey_'+device.name);
+      appKey=null;fastMode=false;
+      reconnect(gen3);return;
+    }
+  }
+  status('Готово');
+}
+
+/* ===== Сессия ===== */
+async function startSession(useGen3){
+  sessionId++;const sid=sessionId;
+  gen3=useGen3;rx=[];handshakeDone=false;fastMode=false;
+  clearTimeout(handshakeTimer);handshakeTimer=null;
+  const saved=localStorage.getItem('appkey_'+device.name);
+  appKey=saved?Uint8Array.from(atob(saved),c=>c.charCodeAt(0)):null;
+  status('Подключение по Bluetooth...');
+  log('Подключение, Gen3='+gen3);
+  const server=await device.gatt.connect();
+  const svc=await server.getPrimaryService(SRV);
+  chW=await svc.getCharacteristic(CHW);
+  chN=await svc.getCharacteristic(CHN);
+  chN.removeEventListener('characteristicvaluechanged',onNotify);
+  chN.addEventListener('characteristicvaluechanged',onNotify);
+  await chN.startNotifications();
+  proto=new Proto(device.name,gen3);
+  await proto.init();
+  status('Установка связи...');
+  await sleep(1500);
+  if(sid!==sessionId)return;
+  const raw=await proto.encrypt(Uint8Array.from([0x5A,0xA5,0x00,0x3E,0x04,0x5B,0x00]));
+  log('TX '+hex(raw));
+  await writeRaw(raw);
+  if(!gen3){
+    gen3Timer=setTimeout(()=>{
+      if(sid!==sessionId)return;
+      log('Нет ответа на Gen2, пробую Gen3...');
+      reconnect(true);
+    },1200);
+  }
+}
+async function reconnect(useGen3){
+  sessionId++;
+  try{device.gatt.disconnect();}catch(e){}
+  await sleep(1500);
+  try{await startSession(useGen3);}catch(e){log('Ошибка: '+e.message);status('Ошибка подключения');}
+}
+
+$('btn').onclick=async()=>{
+  try{
+    const opts=$('all').checked
+      ?{acceptAllDevices:true,optionalServices:[SRV]}
+      :{filters:[{services:[SRV]},{services:['0000fe95-0000-1000-8000-00805f9b34fb']}],optionalServices:[SRV]};
+    device=await navigator.bluetooth.requestDevice(opts);
+    log('Выбрано: '+device.name);
+    ['sn','model','region','vcu','mcu','bms','ble'].forEach(i=>$(i).textContent='—');
+    await startSession(false);
+  }catch(e){log('Ошибка: '+e.message);status('Не подключено');}
+};
+
+if(!navigator.bluetooth){
+  const w=$('warn');w.style.display='block';
+  w.textContent='Этот браузер не поддерживает Web Bluetooth. Откройте страницу в Chrome или Edge на компьютере (не Safari, не iPhone).';
+  $('btn').disabled=true;
+}
+</script>
+</body>
+</html>
