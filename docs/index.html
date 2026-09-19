@@ -174,7 +174,7 @@ let handshakeDone=false,handshakeTimer=null,gen3Timer=null,pending=null,appKey=n
 
 async function writeRaw(bytes){
   for(let i=0;i<bytes.length;i+=20){
-    await chW.writeValueWithoutResponse(bytes.slice(i,i+20));
+    await chW.writeValueWithResponse(bytes.slice(i,i+20));
     await sleep(15);
   }
 }
@@ -306,11 +306,17 @@ async function startSession(useGen3){
   status('Подключение по Bluetooth...');
   log('Подключение, Gen3='+gen3);
   const server=await device.gatt.connect();
+  await sleep(300);
   const svc=await server.getPrimaryService(SRV);
   chW=await svc.getCharacteristic(CHW);
   chN=await svc.getCharacteristic(CHN);
   chN.removeEventListener('characteristicvaluechanged',onNotify);
   chN.addEventListener('characteristicvaluechanged',onNotify);
+  device.addEventListener('gattserverdisconnected', ()=>{
+  log('Связь разорвана, переподключение...');
+  status('Переподключение...');
+  setTimeout(()=>reconnect(gen3), 1500);
+});
   await chN.startNotifications();
   proto=new Proto(device.name,gen3);
   await proto.init();
