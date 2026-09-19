@@ -282,7 +282,7 @@ function showModel(sn){
 }
 async function startInfo(sid){
   status('Подключено, читаю данные...');
-  const cmds=['5AA5003E045D00','5AA5013E1601100E','5AA5013E16011702','5AA5013E16011802','5AA5013E16011902','5AA5013E04010102'];
+  const cmds=['5AA5003E045D00','5AA5013E0701007F','5AA5013E1601100E','5AA5013E16011702','5AA5013E16011802','5AA5013E16011902','5AA5013E04010102'];
   for(const c of cmds){
     if(sid!==sessionId)return;
     const ok=await sendAndWait(c);
