@@ -171,11 +171,11 @@ class Proto{
 let device=null,chW=null,chN=null,proto=null,gen3=false;
 let rx=[],chain=Promise.resolve(),sessionId=0;
 let handshakeDone=false,handshakeTimer=null,gen3Timer=null,pending=null,appKey=null,fastMode=false;
-let sessionAtDisconnectGuard=-1;
+let sessionAtDisconnectGuard=-1,rejectionCount=0;
 
 async function writeRaw(bytes){
   for(let i=0;i<bytes.length;i+=20){
-    await chW.writeValueWithResponse(bytes.slice(i,i+20));
+    try { await chW.writeValueWithoutResponse(bytes.slice(i,i+20)); } catch(e) {}
     await sleep(15);
   }
 }
@@ -214,7 +214,7 @@ async function handlePacket(pkt,sid){
   if(dec.length<7)return;
   const cmd=dec[5];
   log('RX '+hex(dec));
-  if(cmd===0x5B){
+if(cmd===0x5B){
     if(handshakeDone||handshakeTimer||fastMode)return;
     if(appKey){
       log('Быстрый вход с сохранённым ключом');
@@ -227,7 +227,9 @@ async function handlePacket(pkt,sid){
     appKey=crypto.getRandomValues(new Uint8Array(16));
     const p=new Uint8Array(23);
     p.set([0x5A,0xA5,0x10,0x3E,0x04,0x5C,0x00],0);p.set(appKey,7);
-    status('Нажмите кнопку питания на самокате!');
+    
+    status('Обмен ключами безопасности...');
+    rejectionCount=0;
     let tries=0;
     const send=async()=>{
       if(handshakeDone||sid!==sessionId)return;
@@ -246,7 +248,13 @@ async function handlePacket(pkt,sid){
       clearTimeout(handshakeTimer);handshakeDone=true;
       localStorage.setItem('appkey_'+device.name,btoa(String.fromCharCode(...appKey)));
       log('Авторизация пройдена, ключ сохранён');
+      status('Авторизация пройдена');
       startInfo(sid);
+    } else {
+      rejectionCount++;
+      if(rejectionCount === 4) {
+        status('Нажмите кнопку питания на самокате!');
+      }
     }
   }else{
     if(fastMode&&!handshakeDone){handshakeDone=true;log('Быстрый вход подтверждён');}
@@ -348,9 +356,11 @@ $('btn').onclick=async()=>{
     device.addEventListener('gattserverdisconnected', ()=>{
       if(sessionId===sessionAtDisconnectGuard)return;
       sessionAtDisconnectGuard=sessionId;
-      log('Связь разорвана, переподключение...');
-      status('Переподключение...');
-      setTimeout(()=>reconnect(gen3), 1500);
+      sessionId++; // Мгновенно убиваем текущую сессию и спам
+      clearTimeout(handshakeTimer); handshakeTimer=null;
+      clearTimeout(gen3Timer); gen3Timer=null;
+      log('Связь разорвана. Нажмите "Подключиться" заново.');
+      status('Отключено');
     });
 
     ['sn','model','region','vcu','mcu','bms','ble'].forEach(i=>$(i).textContent='—');
