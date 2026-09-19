@@ -193,6 +193,7 @@ function sendAndWait(hexStr){
 
 function onNotify(ev){
   const v=new Uint8Array(ev.target.value.buffer.slice(ev.target.value.byteOffset,ev.target.value.byteOffset+ev.target.value.byteLength));
+  log('RAW '+hex(v));
   rx.push(...v);
   while(rx.length>=3){
     if(rx[0]!==0x5A||rx[1]!==0xA5){rx=[];return;}
@@ -211,7 +212,7 @@ async function handlePacket(pkt,sid){
   const dec=await proto.decrypt(pkt);
   if(dec.length<7)return;
   const cmd=dec[5];
-  if(cmd!==0x04)log('RX '+hex(dec));
+  log('RX '+hex(dec));
   if(cmd===0x5B){
     if(handshakeDone||handshakeTimer||fastMode)return;
     if(appKey){
