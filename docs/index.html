@@ -174,7 +174,7 @@ let handshakeDone=false,handshakeTimer=null,gen3Timer=null,pending=null,appKey=n
 
 async function writeRaw(bytes){
   for(let i=0;i<bytes.length;i+=20){
-    await chW.writeValueWithResponse(bytes.slice(i,i+20));
+    await chW.writeValueWithoutResponse(bytes.slice(i,i+20));
     await sleep(15);
   }
 }
@@ -193,7 +193,6 @@ function sendAndWait(hexStr){
 
 function onNotify(ev){
   const v=new Uint8Array(ev.target.value.buffer.slice(ev.target.value.byteOffset,ev.target.value.byteOffset+ev.target.value.byteLength));
-  log('RAW '+hex(v));
   rx.push(...v);
   while(rx.length>=3){
     if(rx[0]!==0x5A||rx[1]!==0xA5){rx=[];return;}
@@ -212,7 +211,7 @@ async function handlePacket(pkt,sid){
   const dec=await proto.decrypt(pkt);
   if(dec.length<7)return;
   const cmd=dec[5];
-  log('RX '+hex(dec));
+  if(cmd!==0x04)log('RX '+hex(dec));
   if(cmd===0x5B){
     if(handshakeDone||handshakeTimer||fastMode)return;
     if(appKey){
@@ -282,7 +281,7 @@ function showModel(sn){
 }
 async function startInfo(sid){
   status('Подключено, читаю данные...');
-  const cmds=['5AA5003E045D00','5AA5013E0701007F','5AA5013E1601100E','5AA5013E16011702','5AA5013E16011802','5AA5013E16011902','5AA5013E04010102'];
+  const cmds=['5AA5003E045D00','5AA5013E1601100E','5AA5013E16011702','5AA5013E16011802','5AA5013E16011902','5AA5013E04010102'];
   for(const c of cmds){
     if(sid!==sessionId)return;
     const ok=await sendAndWait(c);
@@ -306,17 +305,11 @@ async function startSession(useGen3){
   status('Подключение по Bluetooth...');
   log('Подключение, Gen3='+gen3);
   const server=await device.gatt.connect();
-  await sleep(300);
   const svc=await server.getPrimaryService(SRV);
   chW=await svc.getCharacteristic(CHW);
   chN=await svc.getCharacteristic(CHN);
   chN.removeEventListener('characteristicvaluechanged',onNotify);
   chN.addEventListener('characteristicvaluechanged',onNotify);
-  device.addEventListener('gattserverdisconnected', ()=>{
-  log('Связь разорвана, переподключение...');
-  status('Переподключение...');
-  setTimeout(()=>reconnect(gen3), 1500);
-});
   await chN.startNotifications();
   proto=new Proto(device.name,gen3);
   await proto.init();
