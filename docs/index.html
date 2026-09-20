@@ -327,6 +327,32 @@ async function startInfo(sid){
   if(sid===sessionId) status('Готово');
 }
 
+/* Подключение к GATT + получение сервиса/характеристик с внутренними
+   короткими повторами: иногда сразу после нашего же device.gatt.disconnect()
+   (например, после неудачного fast-key) самокат/ОС ещё раз мгновенно роняет
+   связь прямо во время повторного connect() — раньше это приводило к
+   фатальной ошибке "GATT Server is disconnected" без единой попытки восстановиться. */
+async function connectGattWithRetry(sid, attempts){
+  let lastErr=null;
+  for(let i=0;i<attempts;i++){
+    if(sid!==sessionId)throw new Error('superseded');
+    try{
+      const server=await device.gatt.connect();
+      await sleep(300);
+      const svc=await server.getPrimaryService(SRV);
+      const w=await svc.getCharacteristic(CHW);
+      const n=await svc.getCharacteristic(CHN);
+      return {w,n};
+    }catch(e){
+      lastErr=e;
+      log('Попытка подключения '+(i+1)+'/'+attempts+' не удалась: '+e.message);
+      if(sid!==sessionId)throw new Error('superseded');
+      await sleep(800+i*700);
+    }
+  }
+  throw lastErr||new Error('Не удалось подключиться к GATT');
+}
+
 /* ===== Сессия ===== */
 async function startSession(useGen3){
   sessionId++;const sid=sessionId;
@@ -337,11 +363,9 @@ async function startSession(useGen3){
   appKey=saved?Uint8Array.from(atob(saved),c=>c.charCodeAt(0)):null;
   status('Подключение по Bluetooth...');
   log('Подключение, Gen3='+gen3);
-  const server=await device.gatt.connect();
-  await sleep(300);
-  const svc=await server.getPrimaryService(SRV);
-  chW=await svc.getCharacteristic(CHW);
-  chN=await svc.getCharacteristic(CHN);
+  const {w,n}=await connectGattWithRetry(sid,4);
+  if(sid!==sessionId)return;
+  chW=w;chN=n;
   chN.removeEventListener('characteristicvaluechanged',onNotify);
   chN.addEventListener('characteristicvaluechanged',onNotify);
   await chN.startNotifications();
@@ -354,12 +378,15 @@ async function startSession(useGen3){
   log('TX '+hex(raw));
   await writeRaw(raw);
   if(!gen3){
-    // Как в Android: 500мс на ответ Gen2, иначе переключаемся на Gen3
+    // Как в Android: на ответ Gen2 отводится время, иначе переключаемся на Gen3.
+    // Сделано заметно больше android-эталонных 500мс, т.к. в браузере накладные
+    // расходы (Promise-цепочки, WebCrypto) иногда не укладываются в 500мс даже
+    // для настоящего Gen2, и это ложно триггерило ненужное переключение.
     gen3Timer=setTimeout(()=>{
       if(sid!==sessionId)return;
       log('Нет ответа на Gen2, пробую Gen3...');
       reconnect(true);
-    },500);
+    },2500);
   }
 }
 
@@ -372,26 +399,33 @@ async function reconnect(useGen3){
   await sleep(1500); // как в Android pendingReconnect
   try{
     await startSession(useGen3);
-  }catch(e){
-    log('Ошибка: '+e.message);status('Ошибка подключения');
-  }finally{
     reconnectInFlight=false;
+  }catch(e){
+    log('Ошибка: '+e.message);
+    status('Не удалось подключиться, повтор через 3с...');
+    // reconnectInFlight намеренно НЕ сбрасываем в false здесь — иначе в узком окне
+    // между этим catch и стартом отложенного passiveReconnect случайный
+    // 'gattserverdisconnected' может запустить второй параллельный реконнект
+    if(!stopRequested) setTimeout(()=>passiveReconnect(useGen3),3000);
+    else reconnectInFlight=false;
   }
 }
 
 /* Пассивный реконнект: сработал 'gattserverdisconnected' сам по себе
-   (устройство пропало из радиуса, BT моргнул и т.п.) */
+   (устройство пропало из радиуса, BT моргнул и т.п.), либо это повторная
+   попытка после неудачного reconnect() выше. */
 async function passiveReconnect(useGen3){
   reconnectInFlight=true;
   await sleep(3000); // как в Android обычный реконнект (не pendingReconnect)
   if(stopRequested){reconnectInFlight=false;return;}
   try{
     await startSession(useGen3);
+    reconnectInFlight=false;
   }catch(e){
     log('Ошибка автопереподключения: '+e.message);
-    status('Ошибка подключения');
-  }finally{
-    reconnectInFlight=false;
+    status('Не удалось подключиться, повтор через 3с...');
+    if(!stopRequested) setTimeout(()=>passiveReconnect(useGen3),3000);
+    else reconnectInFlight=false;
   }
 }
 
