@@ -245,11 +245,13 @@ async function sendCmd(hexStr){
   log('TX '+hex(raw));
   await writeRaw(raw);
 }
-let cmdChain=Promise.resolve(); // общая очередь: не даём разным командам (poll питания, смена региона, хендшейк) толкаться за один и тот же 'pending'
+let cmdChain=Promise.resolve(); // общая очередь: не даём разным командам (poll питания, смена региона, хендшейк) толкаться друг с другом
+let pendingToken=0; // у каждого sendAndWait — свой номер, чтобы опоздавший ответ на СТАРУЮ команду не подтвердил случайно НОВУЮ
 function sendAndWait(hexStr){
   const task=()=>new Promise(res=>{
-    const t=setTimeout(()=>{pending=null;res(null);},1000); // как в Android: таймаут команды 1000мс
-    pending=()=>{clearTimeout(t);pending=null;res(true);};
+    const myToken=++pendingToken;
+    const t=setTimeout(()=>{if(pendingToken===myToken)pending=null;res(null);},1000); // как в Android: таймаут команды 1000мс
+    pending=()=>{if(pendingToken!==myToken)return;clearTimeout(t);pending=null;res(true);};
     sendCmd(hexStr).catch(e=>log('Ошибка отправки: '+e.message));
   });
   const result=cmdChain.then(task,task);
