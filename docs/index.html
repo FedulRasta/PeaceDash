@@ -171,7 +171,9 @@ class Proto{
 let device=null,chW=null,chN=null,proto=null,gen3=false;
 let rx=[],chain=Promise.resolve(),sessionId=0;
 let handshakeDone=false,handshakeTimer=null,gen3Timer=null,pending=null,appKey=null,fastMode=false;
-let sessionAtDisconnectGuard=-1,rejectionCount=0;
+let rejectionCount=0;
+let reconnectInFlight=false;   // true пока идёт наш собственный контролируемый реконнект
+let stopRequested=false;       // true только если явно остановили (сейчас не используется UI, но оставлено для честности)
 
 async function writeRaw(bytes){
   for(let i=0;i<bytes.length;i+=20){
@@ -186,7 +188,7 @@ async function sendCmd(hexStr){
 }
 function sendAndWait(hexStr){
   return new Promise(async res=>{
-    const t=setTimeout(()=>{pending=null;res(null);},1500);
+    const t=setTimeout(()=>{pending=null;res(null);},1000); // как в Android: таймаут команды 1000мс
     pending=()=>{clearTimeout(t);pending=null;res(true);};
     try{await sendCmd(hexStr);}catch(e){log('Ошибка отправки: '+e.message);}
   });
@@ -209,31 +211,34 @@ function onNotify(ev){
 
 async function handlePacket(pkt,sid){
   if(sid!==sessionId)return;
-  clearTimeout(gen3Timer);
+  clearTimeout(gen3Timer); // как в Android: любой входящий пакет отменяет фолбэк на Gen3
   const dec=await proto.decrypt(pkt);
   if(dec.length<7)return;
   const cmd=dec[5];
   log('RX '+hex(dec));
-if(cmd===0x5B){
+  if(cmd===0x5B){
     if(handshakeDone||handshakeTimer||fastMode)return;
     if(appKey){
       log('Быстрый вход с сохранённым ключом');
       proto.setSaved(appKey);
       await proto.reconnectWithSavedKey();
       fastMode=true;
+      status('Подключено (быстрый вход)...');
       startInfo(sid);
       return;
     }
+    // Генерируем НОВЫЙ ключ — здесь же обязательно сбрасываем счётчик отказов,
+    // иначе он копится между сессиями и сообщение "нажмите кнопку" всплывает раньше времени
     appKey=crypto.getRandomValues(new Uint8Array(16));
+    rejectionCount=0;
     const p=new Uint8Array(23);
     p.set([0x5A,0xA5,0x10,0x3E,0x04,0x5C,0x00],0);p.set(appKey,7);
-    
+
     status('Обмен ключами безопасности...');
-    rejectionCount=0;
     let tries=0;
     const send=async()=>{
       if(handshakeDone||sid!==sessionId)return;
-      if(++tries>40){status('Не удалось привязаться');return;}
+      if(++tries>60){status('Не удалось привязаться');return;}
       try{
         const raw=await proto.encrypt(p);
         log('TX '+hex(raw));await writeRaw(raw);
@@ -245,7 +250,7 @@ if(cmd===0x5B){
     const code=dec[6];
     log('Ответ авторизации: '+code);
     if(code===1){
-      clearTimeout(handshakeTimer);handshakeDone=true;
+      clearTimeout(handshakeTimer);handshakeTimer=null;handshakeDone=true;
       localStorage.setItem('appkey_'+device.name,btoa(String.fromCharCode(...appKey)));
       log('Авторизация пройдена, ключ сохранён');
       status('Авторизация пройдена');
@@ -255,9 +260,19 @@ if(cmd===0x5B){
       if(rejectionCount === 4) {
         status('Нажмите кнопку питания на самокате!');
       }
+      // Ключ у нас всегда свежесгенерированный (аналог isCurrentKeyNew=true в Android),
+      // поэтому после 5 отказов даём себе шанс сгенерировать новый ключ на следующий 0x5B
+      if(rejectionCount >= 5){
+        clearTimeout(handshakeTimer);handshakeTimer=null;
+        appKey=null;
+      }
     }
   }else{
-    if(fastMode&&!handshakeDone){handshakeDone=true;log('Быстрый вход подтверждён');}
+    if(fastMode&&!handshakeDone){
+      handshakeDone=true;
+      log('Быстрый вход подтверждён');
+      status('Подключено');
+    }
     if(cmd===0x04)parseInfo(dec);
     if(pending)pending();
   }
@@ -302,14 +317,15 @@ async function startInfo(sid){
       reconnect(gen3);return;
     }
   }
-  status('Готово');
+  if(sid===sessionId) status('Готово');
 }
 
 /* ===== Сессия ===== */
 async function startSession(useGen3){
   sessionId++;const sid=sessionId;
-  gen3=useGen3;rx=[];handshakeDone=false;fastMode=false;
+  gen3=useGen3;rx=[];handshakeDone=false;fastMode=false;rejectionCount=0;
   clearTimeout(handshakeTimer);handshakeTimer=null;
+  clearTimeout(gen3Timer);gen3Timer=null;
   const saved=localStorage.getItem('appkey_'+device.name);
   appKey=saved?Uint8Array.from(atob(saved),c=>c.charCodeAt(0)):null;
   status('Подключение по Bluetooth...');
@@ -318,7 +334,7 @@ async function startSession(useGen3){
   await sleep(300);
   const svc=await server.getPrimaryService(SRV);
   chW=await svc.getCharacteristic(CHW);
-chN=await svc.getCharacteristic(CHN);
+  chN=await svc.getCharacteristic(CHN);
   chN.removeEventListener('characteristicvaluechanged',onNotify);
   chN.addEventListener('characteristicvaluechanged',onNotify);
   await chN.startNotifications();
@@ -331,37 +347,68 @@ chN=await svc.getCharacteristic(CHN);
   log('TX '+hex(raw));
   await writeRaw(raw);
   if(!gen3){
+    // Как в Android: 500мс на ответ Gen2, иначе переключаемся на Gen3
     gen3Timer=setTimeout(()=>{
       if(sid!==sessionId)return;
       log('Нет ответа на Gen2, пробую Gen3...');
       reconnect(true);
-    },1200);
+    },500);
   }
 }
+
+/* Активный (управляемый) реконнект: мы сами рвём текущее соединение
+   (переключение Gen2->Gen3, неудачный быстрый вход и т.п.) */
 async function reconnect(useGen3){
+  reconnectInFlight=true;
   sessionId++;
   try{device.gatt.disconnect();}catch(e){}
-  await sleep(1500);
-  try{await startSession(useGen3);}catch(e){log('Ошибка: '+e.message);status('Ошибка подключения');}
+  await sleep(1500); // как в Android pendingReconnect
+  try{
+    await startSession(useGen3);
+  }catch(e){
+    log('Ошибка: '+e.message);status('Ошибка подключения');
+  }finally{
+    reconnectInFlight=false;
+  }
+}
+
+/* Пассивный реконнект: сработал 'gattserverdisconnected' сам по себе
+   (устройство пропало из радиуса, BT моргнул и т.п.) */
+async function passiveReconnect(useGen3){
+  reconnectInFlight=true;
+  await sleep(3000); // как в Android обычный реконнект (не pendingReconnect)
+  if(stopRequested){reconnectInFlight=false;return;}
+  try{
+    await startSession(useGen3);
+  }catch(e){
+    log('Ошибка автопереподключения: '+e.message);
+    status('Ошибка подключения');
+  }finally{
+    reconnectInFlight=false;
+  }
+}
+
+function bindDeviceEvents(dev){
+  if(dev._peaceDashBound)return; // не вешаем обработчик повторно на тот же объект device
+  dev._peaceDashBound=true;
+  dev.addEventListener('gattserverdisconnected', ()=>{
+    log('Связь разорвана');
+    status('Связь прервана. Повторное подключение...');
+    if(stopRequested)return;
+    if(reconnectInFlight)return; // разрыв уже обрабатывается нашим же reconnect()
+    passiveReconnect(gen3);
+  });
 }
 
 $('btn').onclick=async()=>{
   try{
+    stopRequested=false;
     const opts=$('all').checked
       ?{acceptAllDevices:true,optionalServices:[SRV]}
       :{filters:[{services:[SRV]},{services:['0000fe95-0000-1000-8000-00805f9b34fb']}],optionalServices:[SRV]};
     device=await navigator.bluetooth.requestDevice(opts);
     log('Выбрано: '+device.name);
-
-    device.addEventListener('gattserverdisconnected', ()=>{
-      if(sessionId===sessionAtDisconnectGuard)return;
-      sessionAtDisconnectGuard=sessionId;
-      sessionId++; // Мгновенно убиваем текущую сессию и спам
-      clearTimeout(handshakeTimer); handshakeTimer=null;
-      clearTimeout(gen3Timer); gen3Timer=null;
-      log('Связь разорвана. Нажмите "Подключиться" заново.');
-      status('Отключено');
-    });
+    bindDeviceEvents(device);
 
     ['sn','model','region','vcu','mcu','bms','ble'].forEach(i=>$(i).textContent='—');
     await startSession(false);
