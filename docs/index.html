@@ -13,8 +13,20 @@ button:disabled{background:#455A64}
 .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #223344}
 .row span:first-child{color:#8899AA}
 #status{color:#FF9800;margin:8px 0}
-#log{background:#000;color:#0f0;font:12px monospace;height:220px;overflow:auto;white-space:pre-wrap;padding:8px;border-radius:8px}
 label{color:#8899AA;font-size:14px}
+
+#powerBtn{width:100%;padding:16px;font-size:17px;font-weight:bold;border-radius:12px;margin:12px 0;transition:background .2s}
+
+#logCard{padding:0;overflow:hidden}
+#logHeader{padding:12px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none;color:#8899AA;font-size:14px}
+#logBody{border-top:1px solid #223344;display:none}
+#log{background:#000;color:#0f0;font:12px monospace;height:220px;overflow:auto;white-space:pre-wrap;padding:8px}
+
+select{width:100%;padding:10px;border-radius:8px;background:#0B0E14;color:#fff;border:1px solid #223344;font-size:15px;margin-top:8px}
+#regionConfirm{display:none;margin-top:12px;background:#0B0E14;border-radius:8px;padding:12px}
+#regionConfirm button{margin-right:8px}
+#regionCancel{background:#607D8B}
+#regionNote{color:#8899AA;font-size:13px;margin:4px 0 0}
 </style>
 </head>
 <body>
@@ -25,6 +37,9 @@ label{color:#8899AA;font-size:14px}
   <label><input type="checkbox" id="all"> показать все Bluetooth-устройства</label>
   <div id="status">Не подключено</div>
 </div>
+
+<button id="powerBtn" style="background:#607D8B">Питание: —</button>
+
 <div class="card">
   <div class="row"><span>Серийный номер</span><span id="sn">—</span></div>
   <div class="row"><span>Модель</span><span id="model">—</span></div>
@@ -34,7 +49,24 @@ label{color:#8899AA;font-size:14px}
   <div class="row"><span>BMS</span><span id="bms">—</span></div>
   <div class="row"><span>BLE</span><span id="ble">—</span></div>
 </div>
-<div id="log"></div>
+
+<div class="card" id="funcCard" style="display:none">
+  <div style="font-weight:bold;margin-bottom:6px">Функции</div>
+  <label>Смена региона</label>
+  <div id="regionNote"></div>
+  <select id="regionSelect"></select>
+  <div id="regionConfirm">
+    <div id="regionConfirmText" style="margin-bottom:10px"></div>
+    <button id="regionCancel">Отмена</button>
+    <button id="regionConfirmBtn">Подтвердить</button>
+  </div>
+</div>
+
+<div class="card" id="logCard">
+  <div id="logHeader"><span>Лог</span><span id="logArrow">▼</span></div>
+  <div id="logBody"><div id="log"></div></div>
+</div>
+
 
 <script>
 const SRV='6e400001-b5a3-f393-e0a9-e50e24dcca9e';
@@ -44,8 +76,22 @@ const BASIC=[0x97,0xCF,0xB8,0x02,0x84,0x41,0x43,0xDE,0x56,0x00,0x2B,0x3B,0x34,0x
 
 const $=id=>document.getElementById(id);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-function log(m){const l=$('log');l.textContent+=new Date().toLocaleTimeString()+' '+m+'\n';l.scrollTop=l.scrollHeight;}
+function log(m){
+  const l=$('log');
+  // Автопрокрутка только если пользователь и так был внизу лога.
+  // Если он прокрутил вверх (например, чтобы скопировать текст) — не дёргаем его вниз.
+  const atBottom = l.scrollHeight - l.scrollTop - l.clientHeight < 24;
+  l.textContent+=new Date().toLocaleTimeString()+' '+m+'\n';
+  if(atBottom) l.scrollTop=l.scrollHeight;
+}
 function status(m){$('status').textContent=m;}
+$('logHeader').onclick=()=>{
+  const body=$('logBody');
+  const open=body.style.display==='block';
+  body.style.display=open?'none':'block';
+  $('logArrow').textContent=open?'▼':'▲';
+  if(!open) $('log').scrollTop=$('log').scrollHeight;
+};
 const hex=b=>[...b].map(x=>x.toString(16).padStart(2,'0').toUpperCase()).join(' ');
 function fromHex(s){s=s.replace(/\s+/g,'');const o=new Uint8Array(s.length/2);for(let i=0;i<o.length;i++)o[i]=parseInt(s.substr(i*2,2),16);return o;}
 function xor(a,b){const r=new Uint8Array(a.length);for(let i=0;i<a.length;i++)r[i]=a[i]^b[i];return r;}
@@ -199,12 +245,16 @@ async function sendCmd(hexStr){
   log('TX '+hex(raw));
   await writeRaw(raw);
 }
+let cmdChain=Promise.resolve(); // общая очередь: не даём разным командам (poll питания, смена региона, хендшейк) толкаться за один и тот же 'pending'
 function sendAndWait(hexStr){
-  return new Promise(async res=>{
+  const task=()=>new Promise(res=>{
     const t=setTimeout(()=>{pending=null;res(null);},1000); // как в Android: таймаут команды 1000мс
     pending=()=>{clearTimeout(t);pending=null;res(true);};
-    try{await sendCmd(hexStr);}catch(e){log('Ошибка отправки: '+e.message);}
+    sendCmd(hexStr).catch(e=>log('Ошибка отправки: '+e.message));
   });
+  const result=cmdChain.then(task,task);
+  cmdChain=result.catch(()=>{});
+  return result;
 }
 
 function onNotify(ev){
@@ -286,17 +336,26 @@ async function handlePacket(pkt,sid){
 }
 
 /* ===== Данные ===== */
+let currentSN=null;
 const ver3=p=>'v'+(p[1])+'.'+(p[0]>>4)+'.'+(p[0]&15);
 function parseInfo(dec){
   const sender=dec[3],off=dec[6],p=dec.slice(7);
   if(sender===0x16&&off===0x10&&p.length>=14){
     const sn=new TextDecoder().decode(p.slice(0,14));
-    $('sn').textContent=sn;showModel(sn);
+    currentSN=sn;
+    $('sn').textContent=sn;showModel(sn);populateRegionUI(sn);
   }else if(sender===0x16&&off===0x17&&p.length>=2){$('vcu').textContent=ver3(p);}
   else if(sender===0x16&&off===0x18&&p.length>=2){$('mcu').textContent=ver3(p);}
   else if(sender===0x16&&off===0x19&&p.length>=2){
     $('bms').textContent='v'+(p[1]>>4)+'.'+(p[1]&15)+'.'+(p[0]>>4)+'.'+(p[0]&15);
   }else if(sender===0x04&&off===0x01&&p.length>=2){$('ble').textContent=ver3(p);}
+  else if(sender===0x16&&off===0x1C&&p.length>=1){
+    // Флаги 0 — тот же пакет, что читает Android для состояния питания (swDashPower)
+    if(Date.now()>=powerLockUntil){
+      powerState=(p[0]===0x01);
+      updatePowerButton();
+    }
+  }
 }
 function showModel(sn){
   const p3=sn.substr(0,3),c=sn[3];
@@ -311,8 +370,119 @@ function showModel(sn){
   }
   $('model').textContent=model;$('region').textContent=region||'Неизвестный регион';
 }
+
+/* ===== Питание (как swDashPower в дашборде Android) ===== */
+let powerState=null;       // null=неизвестно, true=включен(красная кнопка), false=выключен(зелёная)
+let powerLockUntil=0;      // на 5с после нажатия игнорируем опрос, как btn.setTag(...+5000) в Android
+let powerPollTimer=null;
+function updatePowerButton(){
+  const b=$('powerBtn');
+  if(powerState===true){b.textContent='Самокат ВКЛЮЧЕН — нажмите, чтобы выключить';b.style.background='#F44336';}
+  else if(powerState===false){b.textContent='Самокат ВЫКЛЮЧЕН — нажмите, чтобы включить';b.style.background='#4CAF50';}
+  else{b.textContent='Питание: —';b.style.background='#607D8B';}
+}
+$('powerBtn').onclick=async()=>{
+  if(!chW){log('Нет подключения');return;}
+  const turnOn = powerState!==true; // неизвестно или выключен -> включаем; включен -> выключаем
+  powerLockUntil=Date.now()+5000;
+  powerState=turnOn;updatePowerButton();
+  await sendAndWait(turnOn?'5AA5023E1679000100':'5AA5023E1679000200');
+};
+function startPowerPoll(){
+  stopPowerPoll();
+  powerPollTimer=setInterval(()=>{
+    if(!chW||!handshakeDone)return;
+    if(Date.now()<powerLockUntil)return;
+    sendAndWait('5AA5013E16011C02');
+  },2000);
+}
+function stopPowerPoll(){if(powerPollTimer){clearInterval(powerPollTimer);powerPollTimer=null;}powerState=null;updatePowerButton();}
+
+/* ===== Смена региона (как populateRegionMenu/sendSnChange в Android) ===== */
+function getRegionOptions(sn){
+  if(!sn||sn.length<4)return null;
+  const p3=sn.substr(0,3),c4=sn[3];
+  let opts=[];
+  if(p3==='1EF'){
+    if(c4>='A'&&c4<='E'){
+      opts=[['A','1EFA - CN, 32км/ч'],['B','1EFB - US, 32км/ч'],['C','1EFC - US, Standard (35км/ч)'],['D','1EFD - DE, 20км/ч'],['E','1EFE - EU, 25км/ч']];
+    }else if(c4>='F'&&c4<='K'){
+      opts=[['F','1EFF - CN, 32км/ч'],['G','1EFG - US, 32км/ч'],['H','1EFH - US, Standard (35км/ч)'],['J','1EFJ - DE, 20км/ч'],['K','1EFK - EU, 25км/ч']];
+    }
+  }else if(p3==='1CG'){
+    opts=[['A','1CGA - EU, 25км/ч'],['B','1CGB - DE, 20км/ч'],['C','1CGC - US, Standard (45км/ч)'],['D','1CGD - AUS, 25км/ч'],['E','1CGE - US, 45км/ч'],['I','1CGI - EU?, 25км/ч']];
+  }
+  return opts.length?{prefix:p3,current:c4,opts}:null;
+}
+function populateRegionUI(sn){
+  const info=getRegionOptions(sn);
+  const sel=$('regionSelect'),note=$('regionNote');
+  sel.innerHTML='';
+  hideRegionConfirm();
+  if(!info){
+    sel.style.display='none';
+    note.textContent='Модель не поддерживается для авто-смены региона (SN: '+sn+')';
+    return;
+  }
+  sel.style.display='block';
+  note.textContent='';
+  const ph=document.createElement('option');
+  ph.value='';ph.textContent='Выберите регион...';ph.disabled=true;ph.selected=true;
+  sel.appendChild(ph);
+  for(const [code,label] of info.opts){
+    const o=document.createElement('option');
+    o.value=code;o.textContent=label+(code===info.current?' ✅':'');
+    sel.appendChild(o);
+  }
+}
+let pendingRegionCode=null,pendingRegionLabel=null;
+$('regionSelect').onchange=()=>{
+  const code=$('regionSelect').value;
+  if(!code)return;
+  const info=getRegionOptions(currentSN);
+  const opt=info.opts.find(o=>o[0]===code);
+  pendingRegionCode=code;pendingRegionLabel=opt?opt[1]:code;
+  $('regionConfirmText').textContent='Установить регион: '+pendingRegionLabel+'?';
+  $('regionConfirm').style.display='block';
+};
+function hideRegionConfirm(){
+  $('regionConfirm').style.display='none';
+  pendingRegionCode=null;pendingRegionLabel=null;
+  $('regionSelect').value='';
+}
+$('regionCancel').onclick=hideRegionConfirm;
+$('regionConfirmBtn').onclick=async()=>{
+  if(!pendingRegionCode||!currentSN)return;
+  const code=pendingRegionCode,label=pendingRegionLabel;
+  $('regionConfirm').style.display='none';
+  await applyRegion(code,label);
+};
+async function applyRegion(code,label){
+  if(!chW){log('Нет подключения');return;}
+  status('Установка региона '+label+'...');
+  const newSn=currentSN.substr(0,3)+code+currentSN.substr(4);
+  let hexSn='';
+  for(const ch of newSn) hexSn+=ch.charCodeAt(0).toString(16).padStart(2,'0').toUpperCase();
+  const payload='5AA5123E160410'+hexSn;
+  // Точно та же последовательность и порядок, что и в Android sendSnChange/populateRegionMenu:
+  // сначала 3 раза инъекция нового SN в регистр 0x10, потом читаем обратно для проверки,
+  // потом открываем доступ к конфигурации, потом "магия" записи в flash, потом перезагрузка.
+  await sendAndWait(payload);
+  await sendAndWait(payload);
+  await sendAndWait(payload);
+  await sendAndWait('5AA5013E1601100E');
+  await sendAndWait('5AA5013E16790002');
+  await sendAndWait('5AA5043E16160005011001');
+  await sendAndWait('5AA5003E163900');
+  currentSN=newSn;
+  status('Регион установлен ('+label+'), самокат перезагружается...');
+  log('Регион изменён: '+newSn);
+  $('sn').textContent=newSn;showModel(newSn);populateRegionUI(newSn);
+  hideRegionConfirm();
+}
 async function startInfo(sid){
   status('Подключено, читаю данные...');
+  $('funcCard').style.display='block';
   const cmds=['5AA5003E045D00','5AA5013E0701007F','5AA5013E1601100E','5AA5013E16011702','5AA5013E16011802','5AA5013E16011902','5AA5013E04010102'];
   for(const c of cmds){
     if(sid!==sessionId)return;
@@ -324,7 +494,7 @@ async function startInfo(sid){
       reconnect(gen3);return;
     }
   }
-  if(sid===sessionId) status('Готово');
+  if(sid===sessionId){ status('Готово'); startPowerPoll(); }
 }
 
 /* Подключение к GATT + получение сервиса/характеристик с внутренними
@@ -440,6 +610,7 @@ function bindDeviceEvents(dev){
     // в мёртвое соединение и засоряют лог/гоняются впустую
     clearTimeout(handshakeTimer);handshakeTimer=null;
     clearTimeout(gen3Timer);gen3Timer=null;
+    stopPowerPoll();
     chW=null;chN=null;
     if(stopRequested)return;
     if(reconnectInFlight)return; // разрыв уже обрабатывается нашим же reconnect()
@@ -457,6 +628,10 @@ $('btn').onclick=async()=>{
     log('Выбрано: '+device.name);
     bindDeviceEvents(device);
 
+    stopPowerPoll();
+    currentSN=null;
+    $('funcCard').style.display='none';
+    hideRegionConfirm();
     ['sn','model','region','vcu','mcu','bms','ble'].forEach(i=>$(i).textContent='—');
     await startSession(false);
   }catch(e){log('Ошибка: '+e.message);status('Не подключено');}
