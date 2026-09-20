@@ -176,7 +176,20 @@ let reconnectInFlight=false;   // true пока идёт наш собствен
 let stopRequested=false;       // true только если явно остановили (сейчас не используется UI, но оставлено для честности)
 
 async function writeRaw(bytes){
+  // Сначала пробуем отправить пакет ЦЕЛИКОМ одной записью — именно так себя ведёт
+  // Android после успешной негоциации MTU (517), и именно принудительное дробление
+  // на куски по 20 байт (без учёта реального MTU) было причиной обрывов связи
+  // на пакете ключа (29 байт). Дробим по 20 байт только если реальный MTU
+  // оказался маленьким и запись целиком не прошла.
+  if(!chW)return;
+  try{
+    await chW.writeValueWithoutResponse(bytes);
+    return;
+  }catch(e){
+    log('Пакет целиком не прошёл ('+e.message+'), дроблю на части...');
+  }
   for(let i=0;i<bytes.length;i+=20){
+    if(!chW)return;
     try { await chW.writeValueWithoutResponse(bytes.slice(i,i+20)); } catch(e) {}
     await sleep(15);
   }
@@ -394,6 +407,12 @@ function bindDeviceEvents(dev){
   dev.addEventListener('gattserverdisconnected', ()=>{
     log('Связь разорвана');
     status('Связь прервана. Повторное подключение...');
+    // Сразу глушим все фоновые таймеры/ссылки текущей сессии — иначе они ещё
+    // ~3 секунды (пока passiveReconnect ждёт) продолжают пытаться писать
+    // в мёртвое соединение и засоряют лог/гоняются впустую
+    clearTimeout(handshakeTimer);handshakeTimer=null;
+    clearTimeout(gen3Timer);gen3Timer=null;
+    chW=null;chN=null;
     if(stopRequested)return;
     if(reconnectInFlight)return; // разрыв уже обрабатывается нашим же reconnect()
     passiveReconnect(gen3);
