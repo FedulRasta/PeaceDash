@@ -273,12 +273,6 @@ async function handlePacket(pkt,sid){
       if(rejectionCount === 4) {
         status('Нажмите кнопку питания на самокате!');
       }
-      // Ключ у нас всегда свежесгенерированный (аналог isCurrentKeyNew=true в Android),
-      // поэтому после 5 отказов даём себе шанс сгенерировать новый ключ на следующий 0x5B
-      if(rejectionCount >= 5){
-        clearTimeout(handshakeTimer);handshakeTimer=null;
-        appKey=null;
-      }
     }
   }else{
     if(fastMode&&!handshakeDone){
