@@ -351,8 +351,8 @@ function parseInfo(dec){
   }else if(sender===0x04&&off===0x01&&p.length>=2){$('ble').textContent=ver3(p);}
   else if(sender===0x16&&off===0x1C&&p.length>=1){
     if(Date.now()>=powerLockUntil){
-      // 0x02 означает "Выключен". Все остальные значения (0x01, 0x0E, 0x0D) - "Включен"
-      powerState=(p[0] !== 0x02);
+      // Читаем строго 0-й бит: 1 = включен (0x0D, 0x01 и т.д.), 0 = выключен (0x0E, 0x00 и т.д.)
+      powerState = ((p[0] & 0x01) !== 0);
       updatePowerButton();
     }
   }
