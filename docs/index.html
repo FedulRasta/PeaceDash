@@ -78,10 +78,8 @@ const $=id=>document.getElementById(id);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function log(m){
   const l=$('log');
-  // Автопрокрутка только если пользователь и так был внизу лога.
-  // Если он прокрутил вверх (например, чтобы скопировать текст) — не дёргаем его вниз.
   const atBottom = l.scrollHeight - l.scrollTop - l.clientHeight < 24;
-  l.textContent+=new Date().toLocaleTimeString()+' '+m+'\n';
+  l.appendChild(document.createTextNode(new Date().toLocaleTimeString()+' '+m+'\n'));
   if(atBottom) l.scrollTop=l.scrollHeight;
 }
 function status(m){$('status').textContent=m;}
@@ -352,9 +350,9 @@ function parseInfo(dec){
     $('bms').textContent='v'+(p[1]>>4)+'.'+(p[1]&15)+'.'+(p[0]>>4)+'.'+(p[0]&15);
   }else if(sender===0x04&&off===0x01&&p.length>=2){$('ble').textContent=ver3(p);}
   else if(sender===0x16&&off===0x1C&&p.length>=1){
-    // Флаги 0 — тот же пакет, что читает Android для состояния питания (swDashPower)
     if(Date.now()>=powerLockUntil){
-      powerState=(p[0]===0x01);
+      // 0x02 означает "Выключен". Все остальные значения (0x01, 0x0E, 0x0D) - "Включен"
+      powerState=(p[0] !== 0x02);
       updatePowerButton();
     }
   }
