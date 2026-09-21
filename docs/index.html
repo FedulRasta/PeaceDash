@@ -44,6 +44,7 @@ select{width:100%;padding:10px;border-radius:8px;background:#0B0E14;color:#fff;b
   <div class="row"><span>Серийный номер</span><span id="sn">—</span></div>
   <div class="row"><span>Модель</span><span id="model">—</span></div>
   <div class="row"><span>Регион</span><span id="region">—</span></div>
+  <div class="row"><span>Глобальный лимит</span><span id="glbLimit">—</span></div>
   <div class="row"><span>VCU</span><span id="vcu">—</span></div>
   <div class="row"><span>MCU</span><span id="mcu">—</span></div>
   <div class="row"><span>BMS</span><span id="bms">—</span></div>
@@ -371,6 +372,7 @@ function parseInfo(dec){
   else if(sender===0x16&&off===0x19&&p.length>=2){
     $('bms').textContent='v'+(p[1]>>4)+'.'+(p[1]&15)+'.'+(p[0]>>4)+'.'+(p[0]&15);
   }else if(sender===0x04&&off===0x01&&p.length>=2){$('ble').textContent=ver3(p);}
+  else if(sender===0x16&&off===0x46&&p.length>=2){$('glbLimit').textContent=p[1]+' км/ч';}
   else if(sender===0x16&&off===0x1C&&p.length>=1){
     if(Date.now()>=powerLockUntil){
       // Читаем строго 0-й бит: 1 = включен (0x0D, 0x01 и т.д.), 0 = выключен (0x0E, 0x00 и т.д.)
@@ -378,6 +380,7 @@ function parseInfo(dec){
       updatePowerButton();
     }
   }
+}
 }
 function showModel(sn){
   const p3=sn.substr(0,3),c=sn[3];
@@ -597,7 +600,7 @@ $('btnNotifMaint').onclick = async () => {
 async function startInfo(sid){
   status('Подключено, читаю данные...');
   $('funcCard').style.display='block';
-  const cmds=['5AA5003E045D00','5AA5013E0701007F','5AA5013E1601100E','5AA5013E16011702','5AA5013E16011802','5AA5013E16011902','5AA5013E04010102'];
+  const cmds=['5AA5003E045D00','5AA5013E0701007F','5AA5013E1601100E','5AA5013E16011702','5AA5013E16011802','5AA5013E16011902','5AA5013E04010102','5AA5013E16014602'];
   for(const c of cmds){
     if(sid!==sessionId)return;
     const ok=await sendAndWait(c);
@@ -746,7 +749,7 @@ $('btn').onclick=async()=>{
     currentSN=null;
     $('funcCard').style.display='none';
     hideRegionConfirm();
-    ['sn','model','region','vcu','mcu','bms','ble'].forEach(i=>$(i).textContent='—');
+    ['sn','model','region','glbLimit','vcu','mcu','bms','ble'].forEach(i=>$(i).textContent='—');
     await startSession(false);
   }catch(e){log('Ошибка: '+e.message);status('Не подключено');}
 };
