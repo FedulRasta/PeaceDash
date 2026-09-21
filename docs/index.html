@@ -51,7 +51,8 @@ select{width:100%;padding:10px;border-radius:8px;background:#0B0E14;color:#fff;b
 </div>
 
 <div class="card" id="funcCard" style="display:none">
-  <div style="font-weight:bold;margin-bottom:6px">Функции</div>
+  <div style="font-weight:bold;margin-bottom:6px">Системные функции</div>
+  
   <label>Смена региона</label>
   <div id="regionNote"></div>
   <select id="regionSelect"></select>
@@ -59,6 +60,27 @@ select{width:100%;padding:10px;border-radius:8px;background:#0B0E14;color:#fff;b
     <div id="regionConfirmText" style="margin-bottom:10px"></div>
     <button id="regionCancel">Отмена</button>
     <button id="regionConfirmBtn">Подтвердить</button>
+  </div>
+
+  <button id="btnCustomSn" style="margin-top:12px;width:100%;background:#2196F3">Custom (Свой серийный номер)</button>
+  <div id="customSnBlock" style="display:none;margin-top:12px;background:#0B0E14;border-radius:8px;padding:12px">
+    <label>Введите новый серийный номер:</label>
+    <input type="text" id="customSnInput" maxlength="14" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;background:#151922;color:#fff;border:1px solid #223344;font-size:15px;margin:8px 0 12px;text-transform:uppercase">
+    <button id="customSnCancel" style="background:#607D8B;margin-right:8px">Отмена</button>
+    <button id="customSnConfirm">OK</button>
+  </div>
+
+  <label style="display:block;margin-top:20px">Глобальный лимит скорости</label>
+  <select id="limitSelect"></select>
+
+  <button id="btnSleep" style="margin-top:20px;width:100%;background:#607D8B">Глубокий сон</button>
+  <button id="btnReset" style="margin-top:12px;width:100%;background:#F44336">Сброс к заводским</button>
+
+  <button id="btnNotifs" style="margin-top:12px;width:100%;background:#9C27B0">Сброс уведомлений</button>
+  <div id="notifsBlock" style="display:none;margin-top:12px;background:#0B0E14;border-radius:8px;padding:12px">
+    <button id="btnNotifTire" style="margin-bottom:8px;width:100%;background:#2196F3">Давление в шинах</button>
+    <button id="btnNotifMaint" style="margin-bottom:8px;width:100%;background:#FF9800">Обслуживание (ТО)</button>
+    <button id="btnNotifCancel" style="width:100%;background:#607D8B">Отмена</button>
   </div>
 </div>
 
@@ -457,16 +479,12 @@ $('regionConfirmBtn').onclick=async()=>{
   $('regionConfirm').style.display='none';
   await applyRegion(code,label);
 };
-async function applyRegion(code,label){
+async function setSerialNumber(newSn, label) {
   if(!chW){log('Нет подключения');return;}
-  status('Установка региона '+label+'...');
-  const newSn=currentSN.substr(0,3)+code+currentSN.substr(4);
+  status('Установка ' + label + '...');
   let hexSn='';
   for(const ch of newSn) hexSn+=ch.charCodeAt(0).toString(16).padStart(2,'0').toUpperCase();
   const payload='5AA5123E160410'+hexSn;
-  // Точно та же последовательность и порядок, что и в Android sendSnChange/populateRegionMenu:
-  // сначала 3 раза инъекция нового SN в регистр 0x10, потом читаем обратно для проверки,
-  // потом открываем доступ к конфигурации, потом "магия" записи в flash, потом перезагрузка.
   await sendAndWait(payload);
   await sendAndWait(payload);
   await sendAndWait(payload);
@@ -475,11 +493,107 @@ async function applyRegion(code,label){
   await sendAndWait('5AA5043E16160005011001');
   await sendAndWait('5AA5003E163900');
   currentSN=newSn;
-  status('Регион установлен ('+label+'), самокат перезагружается...');
-  log('Регион изменён: '+newSn);
-  $('sn').textContent=newSn;showModel(newSn);populateRegionUI(newSn);
+  status(label + ' успешно применен, самокат перезагружается...');
+  log('Серийный номер изменен: '+newSn);
+  $('sn').textContent=newSn;
+  showModel(newSn);
+  populateRegionUI(newSn);
+}
+
+async function applyRegion(code,label){
+  const newSn=currentSN.substr(0,3)+code+currentSN.substr(4);
+  await setSerialNumber(newSn, 'региона ' + label);
   hideRegionConfirm();
 }
+
+// === ЛОГИКА НОВЫХ КНОПОК ===
+
+// Инициализация выпадающего списка "Глобальный лимит" (от 15 до 65 км/ч)
+const ls = $('limitSelect');
+ls.innerHTML = '<option value="" disabled selected>Выберите лимит...</option>';
+for(let i = 15; i <= 65; i += 5) {
+  const o = document.createElement('option');
+  o.value = i; o.textContent = i + ' км/ч';
+  ls.appendChild(o);
+}
+
+// Custom SN (Свой серийный номер)
+$('btnCustomSn').onclick = () => {
+  if(!currentSN) { alert('Сначала подключитесь к самокату, чтобы загрузить текущий SN!'); return; }
+  $('customSnInput').value = currentSN;
+  $('customSnBlock').style.display = 'block';
+};
+$('customSnCancel').onclick = () => { $('customSnBlock').style.display = 'none'; };
+$('customSnConfirm').onclick = async () => {
+  const newSn = $('customSnInput').value.trim().toUpperCase();
+  if(newSn.length < 14) { alert('Серийный номер должен состоять как минимум из 14 символов.'); return; }
+  $('customSnBlock').style.display = 'none';
+  if(confirm('Установить серийный номер: ' + newSn + '?')) {
+    await setSerialNumber(newSn, 'нового серийного номера');
+  }
+};
+
+// Глобальный лимит
+$('limitSelect').onchange = async () => {
+  const speed = parseInt($('limitSelect').value);
+  $('limitSelect').value = ''; // Сбрасываем выбор, чтобы можно было кликнуть повторно
+  if(!speed) return;
+  if(confirm('Установить глобальный лимит ' + speed + ' км/ч?')) {
+    if(!chW){log('Нет подключения');return;}
+    status('Установка лимита ' + speed + ' км/ч...');
+    const hexVal = speed.toString(16).padStart(2, '0').toUpperCase();
+    const cmd = '5AA5023E16044600' + hexVal;
+    await sendAndWait(cmd);
+    await sendAndWait(cmd);
+    await sendAndWait(cmd);
+    await sendAndWait('5AA5013E16014602');
+    await sendAndWait('5AA5013E16790002');
+    await sendAndWait('5AA5043E16160005014601');
+    await sendAndWait('5AA5003E163900');
+    status('Лимит ' + speed + ' км/ч установлен, самокат перезагружается...');
+    log('Установлен глобальный лимит: ' + speed + ' км/ч');
+  }
+};
+
+// Глубокий сон
+$('btnSleep').onclick = async () => {
+  if(confirm('Отправить самокат в Сон? Для включения самоката нужно подключить зарядное устройство на 3 секунды.')) {
+    if(!chW) return;
+    await sendAndWait('5AA5023E077A0000');
+    log('Команда глубокого сна отправлена');
+    status('Самокат отправлен в сон');
+  }
+};
+
+// Сброс к заводским
+$('btnReset').onclick = async () => {
+  if(confirm('Сбросить все настройки, привязки и пароли самоката до заводских?')) {
+    if(!chW) return;
+    await sendAndWait('5AA5003E048000');
+    log('Команда сброса к заводским отправлена');
+    status('Настройки сброшены');
+  }
+};
+
+// Сброс уведомлений (Шины / ТО)
+$('btnNotifs').onclick = () => { $('notifsBlock').style.display = 'block'; };
+$('btnNotifCancel').onclick = () => { $('notifsBlock').style.display = 'none'; };
+
+$('btnNotifTire').onclick = async () => {
+  $('notifsBlock').style.display = 'none';
+  if(!chW) return;
+  await sendAndWait('5AA5003E161101');
+  log('Уведомление о давлении в шинах сброшено');
+  alert('Сброшено: Давление в шинах');
+};
+
+$('btnNotifMaint').onclick = async () => {
+  $('notifsBlock').style.display = 'none';
+  if(!chW) return;
+  await sendAndWait('5AA5003E161102');
+  log('Уведомление об обслуживании сброшено');
+  alert('Сброшено: Обслуживание (ТО)');
+};
 async function startInfo(sid){
   status('Подключено, читаю данные...');
   $('funcCard').style.display='block';
