@@ -6,7 +6,7 @@
 <title>PeaceDash Web</title>
 <style>
 body{font-family:system-ui,sans-serif;background:#0B0E14;color:#fff;max-width:640px;margin:0 auto;padding:16px}
-h1{font-size:22px}
+h1{font-size:22px;margin:0}
 button{background:#4CAF50;color:#fff;border:0;border-radius:10px;padding:12px 18px;font-size:16px;cursor:pointer}
 button:disabled{background:#455A64}
 .card{background:#151922;border-radius:12px;padding:14px;margin:12px 0}
@@ -14,6 +14,12 @@ button:disabled{background:#455A64}
 .row span:first-child{color:#8899AA}
 #status{color:#FF9800;margin:8px 0}
 label{color:#8899AA;font-size:14px}
+
+#topBar{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+#langSwitch{display:flex;gap:8px}
+.langBtn{display:flex;align-items:center;gap:6px;padding:7px 12px;font-size:14px;font-weight:bold;background:#1E2530;color:#8899AA;border:2px solid #2C3A4D;border-radius:10px;box-shadow:0 3px 0 #0a0d12;transition:all .1s}
+.langBtn svg{width:22px;height:15px;border-radius:2px;display:block}
+.langBtn.active{background:#0B0E14;color:#fff;border-color:#4CAF50;box-shadow:inset 0 3px 7px rgba(0,0,0,.8);transform:translateY(3px)}
 
 #powerBtn{width:100%;padding:16px;font-size:17px;font-weight:bold;border-radius:12px;margin:12px 0;transition:background .2s}
 
@@ -30,21 +36,31 @@ select{width:100%;padding:10px;border-radius:8px;background:#0B0E14;color:#fff;b
 </style>
 </head>
 <body>
-<h1>PeaceDash Web</h1>
-<div id="warn" class="card" style="display:none;color:#F44336"></div>
+<div id="topBar">
+  <h1>PeaceDash Web</h1>
+  <div id="langSwitch">
+    <button class="langBtn" id="langRu" type="button">
+      <svg viewBox="0 0 9 6"><rect width="9" height="6" fill="#fff"/><rect y="2" width="9" height="2" fill="#0039A6"/><rect y="4" width="9" height="2" fill="#D52B1E"/></svg>RU
+    </button>
+    <button class="langBtn" id="langEn" type="button">
+      <svg viewBox="0 0 60 30"><clipPath id="ukc"><path d="M0 0v30h60V0z"/></clipPath><path d="M0 0v30h60V0z" fill="#012169"/><path d="M0 0l60 30m0-30L0 30" stroke="#fff" stroke-width="6" clip-path="url(#ukc)"/><path d="M0 0l60 30m0-30L0 30" stroke="#C8102E" stroke-width="3" clip-path="url(#ukc)"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#C8102E" stroke-width="6"/></svg>EN
+    </button>
+  </div>
+</div>
+<div id="warn" class="card" style="display:none;color:#F44336" data-i18n>Этот браузер не поддерживает Web Bluetooth. Откройте страницу в Chrome или Edge на компьютере (не Safari, не iPhone).</div>
 <div class="card">
-  <button id="btn">Подключиться к самокату</button>
-  <label><input type="checkbox" id="all"> показать все Bluetooth-устройства</label>
+  <button id="btn" data-i18n>Подключиться к самокату</button>
+  <label><input type="checkbox" id="all"> <span data-i18n>показать все Bluetooth-устройства</span></label>
   <div id="status">Не подключено</div>
 </div>
 
 <button id="powerBtn" style="background:#607D8B">Питание: —</button>
 
 <div class="card">
-  <div class="row"><span>Серийный номер</span><span id="sn">—</span></div>
-  <div class="row"><span>Модель</span><span id="model">—</span></div>
-  <div class="row"><span>Регион</span><span id="region">—</span></div>
-  <div class="row"><span>Глобальный лимит</span><span id="glbLimit">—</span></div>
+  <div class="row"><span data-i18n>Серийный номер</span><span id="sn">—</span></div>
+  <div class="row"><span data-i18n>Модель</span><span id="model">—</span></div>
+  <div class="row"><span data-i18n>Регион</span><span id="region">—</span></div>
+  <div class="row"><span data-i18n>Глобальный лимит</span><span id="glbLimit">—</span></div>
   <div class="row"><span>VCU</span><span id="vcu">—</span></div>
   <div class="row"><span>MCU</span><span id="mcu">—</span></div>
   <div class="row"><span>BMS</span><span id="bms">—</span></div>
@@ -52,41 +68,41 @@ select{width:100%;padding:10px;border-radius:8px;background:#0B0E14;color:#fff;b
 </div>
 
 <div class="card" id="funcCard" style="display:none">
-  <div style="font-weight:bold;margin-bottom:6px">Системные функции</div>
+  <div style="font-weight:bold;margin-bottom:6px" data-i18n>Системные функции</div>
   
-  <label>Смена региона</label>
+  <label data-i18n>Смена региона</label>
   <div id="regionNote"></div>
   <select id="regionSelect"></select>
   <div id="regionConfirm">
     <div id="regionConfirmText" style="margin-bottom:10px"></div>
-    <button id="regionCancel">Отмена</button>
-    <button id="regionConfirmBtn">Подтвердить</button>
+    <button id="regionCancel" data-i18n>Отмена</button>
+    <button id="regionConfirmBtn" data-i18n>Подтвердить</button>
   </div>
 
-  <button id="btnCustomSn" style="margin-top:12px;width:100%;background:#2196F3">Custom (Свой серийный номер)</button>
+  <button id="btnCustomSn" style="margin-top:12px;width:100%;background:#2196F3" data-i18n>Custom (Свой серийный номер)</button>
   <div id="customSnBlock" style="display:none;margin-top:12px;background:#0B0E14;border-radius:8px;padding:12px">
-    <label>Введите новый серийный номер:</label>
+    <label data-i18n>Введите новый серийный номер:</label>
     <input type="text" id="customSnInput" maxlength="14" style="width:100%;box-sizing:border-box;padding:10px;border-radius:8px;background:#151922;color:#fff;border:1px solid #223344;font-size:15px;margin:8px 0 12px;text-transform:uppercase">
-    <button id="customSnCancel" style="background:#607D8B;margin-right:8px">Отмена</button>
+    <button id="customSnCancel" style="background:#607D8B;margin-right:8px" data-i18n>Отмена</button>
     <button id="customSnConfirm">OK</button>
   </div>
 
-  <label style="display:block;margin-top:20px">Глобальный лимит скорости</label>
+  <label style="display:block;margin-top:20px" data-i18n>Глобальный лимит скорости</label>
   <select id="limitSelect"></select>
 
-  <button id="btnSleep" style="margin-top:20px;width:100%;background:#607D8B">Глубокий сон</button>
-  <button id="btnReset" style="margin-top:12px;width:100%;background:#F44336">Сброс к заводским</button>
+  <button id="btnSleep" style="margin-top:20px;width:100%;background:#607D8B" data-i18n>Глубокий сон</button>
+  <button id="btnReset" style="margin-top:12px;width:100%;background:#F44336" data-i18n>Сброс к заводским</button>
 
-  <button id="btnNotifs" style="margin-top:12px;width:100%;background:#9C27B0">Сброс уведомлений</button>
+  <button id="btnNotifs" style="margin-top:12px;width:100%;background:#9C27B0" data-i18n>Сброс уведомлений</button>
   <div id="notifsBlock" style="display:none;margin-top:12px;background:#0B0E14;border-radius:8px;padding:12px">
-    <button id="btnNotifTire" style="margin-bottom:8px;width:100%;background:#2196F3">Давление в шинах</button>
-    <button id="btnNotifMaint" style="margin-bottom:8px;width:100%;background:#FF9800">Обслуживание (ТО)</button>
-    <button id="btnNotifCancel" style="width:100%;background:#607D8B">Отмена</button>
+    <button id="btnNotifTire" style="margin-bottom:8px;width:100%;background:#2196F3" data-i18n>Давление в шинах</button>
+    <button id="btnNotifMaint" style="margin-bottom:8px;width:100%;background:#FF9800" data-i18n>Обслуживание (ТО)</button>
+    <button id="btnNotifCancel" style="width:100%;background:#607D8B" data-i18n>Отмена</button>
   </div>
 </div>
 
 <div class="card" id="logCard">
-  <div id="logHeader"><span>Лог</span><span id="logArrow">▼</span></div>
+  <div id="logHeader"><span data-i18n>Лог</span><span id="logArrow">▼</span></div>
   <div id="logBody"><div id="log"></div></div>
 </div>
 
@@ -99,13 +115,112 @@ const BASIC=[0x97,0xCF,0xB8,0x02,0x84,0x41,0x43,0xDE,0x56,0x00,0x2B,0x3B,0x34,0x
 
 const $=id=>document.getElementById(id);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* ===== Языки (RU / EN) ===== */
+// Ключ = русский текст, значение = английский перевод
+const EN={
+'Подключиться к самокату':'Connect to scooter',
+'показать все Bluetooth-устройства':'show all Bluetooth devices',
+'Серийный номер':'Serial number',
+'Модель':'Model',
+'Регион':'Region',
+'Глобальный лимит':'Global limit',
+'Системные функции':'System functions',
+'Смена региона':'Change region',
+'Отмена':'Cancel',
+'Подтвердить':'Confirm',
+'Custom (Свой серийный номер)':'Custom (Your own serial number)',
+'Введите новый серийный номер:':'Enter new serial number:',
+'Глобальный лимит скорости':'Global speed limit',
+'Глубокий сон':'Deep sleep',
+'Сброс к заводским':'Factory reset',
+'Сброс уведомлений':'Reset notifications',
+'Давление в шинах':'Tire pressure',
+'Обслуживание (ТО)':'Maintenance (service)',
+'Лог':'Log',
+'Этот браузер не поддерживает Web Bluetooth. Откройте страницу в Chrome или Edge на компьютере (не Safari, не iPhone).':'This browser does not support Web Bluetooth. Open this page in Chrome or Edge on a computer (not Safari, not iPhone).',
+'Не подключено':'Not connected',
+'Подключено (быстрый вход)...':'Connected (fast login)...',
+'Обмен ключами безопасности...':'Exchanging security keys...',
+'Не удалось привязаться':'Failed to pair',
+'Авторизация пройдена':'Authorization successful',
+'Нажмите кнопку питания на самокате!':'Press the power button on the scooter!',
+'Подключено':'Connected',
+'Подключено, читаю данные...':'Connected, reading data...',
+'Готово':'Ready',
+'Подключение по Bluetooth...':'Connecting via Bluetooth...',
+'Установка связи...':'Establishing connection...',
+'Не удалось подключиться, повтор через 3с...':'Connection failed, retrying in 3s...',
+'Связь прервана. Повторное подключение...':'Connection lost. Reconnecting...',
+'Установка региона {0}...':'Setting region {0}...',
+'Установка нового серийного номера...':'Setting new serial number...',
+'Регион успешно применён, самокат перезагружается...':'Region applied successfully, scooter is rebooting...',
+'Серийный номер успешно применён, самокат перезагружается...':'Serial number applied successfully, scooter is rebooting...',
+'Установка лимита {0} км/ч...':'Setting limit {0} km/h...',
+'Лимит {0} км/ч установлен, самокат перезагружается...':'Limit {0} km/h set, scooter is rebooting...',
+'Самокат отправлен в сон':'Scooter sent to sleep',
+'Настройки сброшены':'Settings reset',
+'Питание: —':'Power: —',
+'Самокат ВКЛЮЧЕН — нажмите, чтобы выключить':'Scooter is ON — tap to turn off',
+'Самокат ВЫКЛЮЧЕН — нажмите, чтобы включить':'Scooter is OFF — tap to turn on',
+'Неизвестный самокат':'Unknown scooter',
+'Ninebot серия F3 (или неизвестный)':'Ninebot F3 series (or unknown)',
+'Неизвестный регион':'Unknown region',
+'Выберите регион...':'Select region...',
+'Выберите лимит...':'Select limit...',
+'Установить регион: {0}?':'Set region: {0}?',
+'Модель не поддерживается для авто-смены региона (SN: {0})':'Model is not supported for automatic region change (SN: {0})',
+'Сначала подключитесь к самокату, чтобы загрузить текущий SN!':'Connect to the scooter first to load the current SN!',
+'Серийный номер должен состоять как минимум из 14 символов.':'The serial number must be at least 14 characters long.',
+'Установить серийный номер: {0}?':'Set serial number: {0}?',
+'Установить глобальный лимит {0} км/ч?':'Set global limit {0} km/h?',
+'Отправить самокат в Сон? Для включения самоката нужно подключить зарядное устройство на 3 секунды.':'Send the scooter to sleep? To wake it up you need to connect the charger for 3 seconds.',
+'Сбросить все настройки, привязки и пароли самоката до заводских?':'Reset all scooter settings, pairings and passwords to factory defaults?',
+'Сброшено: Давление в шинах':'Reset: Tire pressure',
+'Сброшено: Обслуживание (ТО)':'Reset: Maintenance (service)'
+};
+let lang=localStorage.getItem('lang')==='en'?'en':'ru';
+function t(s){
+  if(lang!=='en')return s;
+  return (EN[s]||s).replace(/км\/ч/g,'km/h');
+}
+function tf(k,...a){
+  let s=t(k);
+  a.forEach((v,i)=>{s=s.split('{'+i+'}').join(v);});
+  return s;
+}
+let statusArgs=['Не подключено'];
+function status(k,...a){statusArgs=[k,...a];renderStatus();}
+function renderStatus(){$('status').textContent=tf(...statusArgs);}
+
+function applyLang(){
+  document.documentElement.lang=lang;
+  document.querySelectorAll('[data-i18n]').forEach(e=>{
+    if(!e.dataset.ru)e.dataset.ru=e.textContent.trim();
+    e.textContent=t(e.dataset.ru);
+  });
+  $('langRu').classList.toggle('active',lang==='ru');
+  $('langEn').classList.toggle('active',lang==='en');
+  renderStatus();
+  updatePowerButton();
+  buildLimitSelect();
+  if(currentSN){showModel(currentSN);populateRegionUI(currentSN);}
+  else hideRegionConfirm();
+}
+function setLang(l){
+  lang=l;
+  try{localStorage.setItem('lang',l);}catch(e){}
+  applyLang();
+}
+$('langRu').onclick=()=>setLang('ru');
+$('langEn').onclick=()=>setLang('en');
+
 function log(m){
   const l=$('log');
   const atBottom = l.scrollHeight - l.scrollTop - l.clientHeight < 24;
   l.appendChild(document.createTextNode(new Date().toLocaleTimeString()+' '+m+'\n'));
   if(atBottom) l.scrollTop=l.scrollHeight;
 }
-function status(m){$('status').textContent=m;}
 $('logHeader').onclick=()=>{
   const body=$('logBody');
   const open=body.style.display==='block';
@@ -372,7 +487,7 @@ function parseInfo(dec){
   else if(sender===0x16&&off===0x19&&p.length>=2){
     $('bms').textContent='v'+(p[1]>>4)+'.'+(p[1]&15)+'.'+(p[0]>>4)+'.'+(p[0]&15);
   }else if(sender===0x04&&off===0x01&&p.length>=2){$('ble').textContent=ver3(p);}
-  else if(sender===0x16&&off===0x46&&p.length>=2){$('glbLimit').textContent=p[1]+' км/ч';}
+  else if(sender===0x16&&off===0x46&&p.length>=2){$('glbLimit').textContent=p[1]+' '+t('км/ч');}
   else if(sender===0x16&&off===0x1C&&p.length>=1){
     if(Date.now()>=powerLockUntil){
       // Читаем строго 0-й бит: 1 = включен (0x0D, 0x01 и т.д.), 0 = выключен (0x0E, 0x00 и т.д.)
@@ -392,7 +507,7 @@ function showModel(sn){
     model='Ninebot G3';
     region={A:'EU (S-25 км/ч)',B:'DE (S-20 км/ч)',C:'US (S-Standard 45 км/ч)',D:'AUS (S-25 км/ч)',E:'US (S-45 км/ч)',I:'EU? (S-25 км/ч)'}[c]||'Неизвестный регион';
   }
-  $('model').textContent=model;$('region').textContent=region||'Неизвестный регион';
+  $('model').textContent=t(model);$('region').textContent=t(region||'Неизвестный регион');
 }
 
 /* ===== Питание (как swDashPower в дашборде Android) ===== */
@@ -401,9 +516,9 @@ let powerLockUntil=0;      // на 5с после нажатия игнорир�
 let powerPollTimer=null;
 function updatePowerButton(){
   const b=$('powerBtn');
-  if(powerState===true){b.textContent='Самокат ВКЛЮЧЕН — нажмите, чтобы выключить';b.style.background='#F44336';}
-  else if(powerState===false){b.textContent='Самокат ВЫКЛЮЧЕН — нажмите, чтобы включить';b.style.background='#4CAF50';}
-  else{b.textContent='Питание: —';b.style.background='#607D8B';}
+  if(powerState===true){b.textContent=t('Самокат ВКЛЮЧЕН — нажмите, чтобы выключить');b.style.background='#F44336';}
+  else if(powerState===false){b.textContent=t('Самокат ВЫКЛЮЧЕН — нажмите, чтобы включить');b.style.background='#4CAF50';}
+  else{b.textContent=t('Питание: —');b.style.background='#607D8B';}
 }
 $('powerBtn').onclick=async()=>{
   if(!chW){log('Нет подключения');return;}
@@ -445,17 +560,17 @@ function populateRegionUI(sn){
   hideRegionConfirm();
   if(!info){
     sel.style.display='none';
-    note.textContent='Модель не поддерживается для авто-смены региона (SN: '+sn+')';
+    note.textContent=tf('Модель не поддерживается для авто-смены региона (SN: {0})',sn);
     return;
   }
   sel.style.display='block';
   note.textContent='';
   const ph=document.createElement('option');
-  ph.value='';ph.textContent='Выберите регион...';ph.disabled=true;ph.selected=true;
+  ph.value='';ph.textContent=t('Выберите регион...');ph.disabled=true;ph.selected=true;
   sel.appendChild(ph);
   for(const [code,label] of info.opts){
     const o=document.createElement('option');
-    o.value=code;o.textContent=label+(code===info.current?' ✅':'');
+    o.value=code;o.textContent=t(label)+(code===info.current?' ✅':'');
     sel.appendChild(o);
   }
 }
@@ -466,7 +581,7 @@ $('regionSelect').onchange=()=>{
   const info=getRegionOptions(currentSN);
   const opt=info.opts.find(o=>o[0]===code);
   pendingRegionCode=code;pendingRegionLabel=opt?opt[1]:code;
-  $('regionConfirmText').textContent='Установить регион: '+pendingRegionLabel+'?';
+  $('regionConfirmText').textContent=tf('Установить регион: {0}?',t(pendingRegionLabel));
   $('regionConfirm').style.display='block';
 };
 function hideRegionConfirm(){
@@ -481,9 +596,11 @@ $('regionConfirmBtn').onclick=async()=>{
   $('regionConfirm').style.display='none';
   await applyRegion(code,label);
 };
-async function setSerialNumber(newSn, label) {
+// kind: 'region' или 'sn'
+async function setSerialNumber(newSn, kind, label) {
   if(!chW){log('Нет подключения');return;}
-  status('Установка ' + label + '...');
+  if(kind==='region')status('Установка региона {0}...', t(label));
+  else status('Установка нового серийного номера...');
   let hexSn='';
   for(const ch of newSn) hexSn+=ch.charCodeAt(0).toString(16).padStart(2,'0').toUpperCase();
   const payload='5AA5123E160410'+hexSn;
@@ -495,7 +612,7 @@ async function setSerialNumber(newSn, label) {
   await sendAndWait('5AA5043E16160005011001');
   await sendAndWait('5AA5003E163900');
   currentSN=newSn;
-  status(label + ' успешно применен, самокат перезагружается...');
+  status(kind==='region'?'Регион успешно применён, самокат перезагружается...':'Серийный номер успешно применён, самокат перезагружается...');
   log('Серийный номер изменен: '+newSn);
   $('sn').textContent=newSn;
   showModel(newSn);
@@ -504,34 +621,39 @@ async function setSerialNumber(newSn, label) {
 
 async function applyRegion(code,label){
   const newSn=currentSN.substr(0,3)+code+currentSN.substr(4);
-  await setSerialNumber(newSn, 'региона ' + label);
+  await setSerialNumber(newSn, 'region', label);
   hideRegionConfirm();
 }
 
 // === ЛОГИКА НОВЫХ КНОПОК ===
 
-// Инициализация выпадающего списка "Глобальный лимит" (от 15 до 65 км/ч)
-const ls = $('limitSelect');
-ls.innerHTML = '<option value="" disabled selected>Выберите лимит...</option>';
-for(let i = 15; i <= 65; i += 5) {
-  const o = document.createElement('option');
-  o.value = i; o.textContent = i + ' км/ч';
-  ls.appendChild(o);
+// Выпадающий список "Глобальный лимит" (от 15 до 65 км/ч)
+function buildLimitSelect(){
+  const ls = $('limitSelect');
+  ls.innerHTML = '';
+  const ph = document.createElement('option');
+  ph.value = ''; ph.disabled = true; ph.selected = true; ph.textContent = t('Выберите лимит...');
+  ls.appendChild(ph);
+  for(let i = 15; i <= 65; i += 5) {
+    const o = document.createElement('option');
+    o.value = i; o.textContent = i + ' ' + t('км/ч');
+    ls.appendChild(o);
+  }
 }
 
 // Custom SN (Свой серийный номер)
 $('btnCustomSn').onclick = () => {
-  if(!currentSN) { alert('Сначала подключитесь к самокату, чтобы загрузить текущий SN!'); return; }
+  if(!currentSN) { alert(t('Сначала подключитесь к самокату, чтобы загрузить текущий SN!')); return; }
   $('customSnInput').value = currentSN;
   $('customSnBlock').style.display = 'block';
 };
 $('customSnCancel').onclick = () => { $('customSnBlock').style.display = 'none'; };
 $('customSnConfirm').onclick = async () => {
   const newSn = $('customSnInput').value.trim().toUpperCase();
-  if(newSn.length < 14) { alert('Серийный номер должен состоять как минимум из 14 символов.'); return; }
+  if(newSn.length < 14) { alert(t('Серийный номер должен состоять как минимум из 14 символов.')); return; }
   $('customSnBlock').style.display = 'none';
-  if(confirm('Установить серийный номер: ' + newSn + '?')) {
-    await setSerialNumber(newSn, 'нового серийного номера');
+  if(confirm(tf('Установить серийный номер: {0}?', newSn))) {
+    await setSerialNumber(newSn, 'sn');
   }
 };
 
@@ -540,9 +662,9 @@ $('limitSelect').onchange = async () => {
   const speed = parseInt($('limitSelect').value);
   $('limitSelect').value = ''; // Сбрасываем выбор, чтобы можно было кликнуть повторно
   if(!speed) return;
-  if(confirm('Установить глобальный лимит ' + speed + ' км/ч?')) {
+  if(confirm(tf('Установить глобальный лимит {0} км/ч?', speed))) {
     if(!chW){log('Нет подключения');return;}
-    status('Установка лимита ' + speed + ' км/ч...');
+    status('Установка лимита {0} км/ч...', speed);
     const hexVal = speed.toString(16).padStart(2, '0').toUpperCase();
     const cmd = '5AA5023E16044600' + hexVal;
     await sendAndWait(cmd);
@@ -552,14 +674,14 @@ $('limitSelect').onchange = async () => {
     await sendAndWait('5AA5013E16790002');
     await sendAndWait('5AA5043E16160005014601');
     await sendAndWait('5AA5003E163900');
-    status('Лимит ' + speed + ' км/ч установлен, самокат перезагружается...');
+    status('Лимит {0} км/ч установлен, самокат перезагружается...', speed);
     log('Установлен глобальный лимит: ' + speed + ' км/ч');
   }
 };
 
 // Глубокий сон
 $('btnSleep').onclick = async () => {
-  if(confirm('Отправить самокат в Сон? Для включения самоката нужно подключить зарядное устройство на 3 секунды.')) {
+  if(confirm(t('Отправить самокат в Сон? Для включения самоката нужно подключить зарядное устройство на 3 секунды.'))) {
     if(!chW) return;
     await sendAndWait('5AA5023E077A0000');
     log('Команда глубокого сна отправлена');
@@ -569,7 +691,7 @@ $('btnSleep').onclick = async () => {
 
 // Сброс к заводским
 $('btnReset').onclick = async () => {
-  if(confirm('Сбросить все настройки, привязки и пароли самоката до заводских?')) {
+  if(confirm(t('Сбросить все настройки, привязки и пароли самоката до заводских?'))) {
     if(!chW) return;
     await sendAndWait('5AA5003E048000');
     log('Команда сброса к заводским отправлена');
@@ -586,7 +708,7 @@ $('btnNotifTire').onclick = async () => {
   if(!chW) return;
   await sendAndWait('5AA5003E161101');
   log('Уведомление о давлении в шинах сброшено');
-  alert('Сброшено: Давление в шинах');
+  alert(t('Сброшено: Давление в шинах'));
 };
 
 $('btnNotifMaint').onclick = async () => {
@@ -594,7 +716,7 @@ $('btnNotifMaint').onclick = async () => {
   if(!chW) return;
   await sendAndWait('5AA5003E161102');
   log('Уведомление об обслуживании сброшено');
-  alert('Сброшено: Обслуживание (ТО)');
+  alert(t('Сброшено: Обслуживание (ТО)'));
 };
 async function startInfo(sid){
   status('Подключено, читаю данные...');
@@ -754,10 +876,11 @@ $('btn').onclick=async()=>{
 };
 
 if(!navigator.bluetooth){
-  const w=$('warn');w.style.display='block';
-  w.textContent='Этот браузер не поддерживает Web Bluetooth. Откройте страницу в Chrome или Edge на компьютере (не Safari, не iPhone).';
+  $('warn').style.display='block';
   $('btn').disabled=true;
 }
+
+applyLang();
 </script>
 </body>
 </html>
