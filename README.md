@@ -28,7 +28,7 @@
 
 ## Безопасность и приватность
 
-Файл проверен на отсутствие вредоносного кода - [отчёт на VirusTotal](https://www.virustotal.com/gui/file/97a1e5ae09645d3d775a0236595a401c0dbc5483640b0c3c6642bb4b7767b9e4?nocache=1).
+Файл проверен на отсутствие вредоносного кода - [отчёт на VirusTotal](https://www.virustotal.com/gui/file-analysis/M2IxZjgzYmU4N2EzOTk3MWMwOTNhZjNkYWI1OWFmZTg6MTc5MDkzNzQyOQ==).
 
 Приложению нужен доступ к геолокации в фоновом режиме - для записи маршрута при выключенном экране. Все данные хранятся только локально на устройстве. Подробнее - в [политике конфиденциальности](https://telegra.ph/Privacy-Policy---PeaceDash-06-15).
 
